@@ -1,13 +1,9 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { MiniKit } from "@worldcoin/minikit-js";
-
-const STORAGE_KEY = "kindCircleStreakData";
-const KIND_BALANCE_KEY = "kindCircleKindBalance";
-const BOOST_COST = 5; // Cost in $KIND to activate Missed Tap Protection
 
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(false);
-  const [screen, setScreen] = useState("welcome");
+  const [loadingVerify, setLoadingVerify] = useState(false);
 
   // World App context states
   const [insideWorldApp, setInsideWorldApp] = useState(false);
@@ -34,9 +30,6 @@ export default function App() {
     microphone: false,
   });
 
-  // Session & streak states (keep your existing logic)
-  // ... (you can keep previous session and streak state here)
-
   // Load World App context on mount
   useEffect(() => {
     if (MiniKit.isInstalled()) {
@@ -55,11 +48,26 @@ export default function App() {
     }
   }, []);
 
-  // Handle login
-  const handleLogin = () => {
-    alert("World ID verification will be added here.");
-    setLoggedIn(true);
-    setScreen("home");
+  // ==== WORLD ID VERIFICATION ====
+  const handleWorldIDVerify = async () => {
+    setLoadingVerify(true);
+    try {
+      const { finalPayload } = await MiniKit.verifyAsync({});
+
+      if (finalPayload.status === "error") {
+        alert("Verification failed. Please try again.");
+        setLoadingVerify(false);
+        return;
+      }
+
+      // Optional: send finalPayload.proof to your backend for verification here
+
+      setLoggedIn(true);
+    } catch (e) {
+      alert("Verification cancelled or error occurred.");
+      console.error(e);
+    }
+    setLoadingVerify(false);
   };
 
   // Request permissions for notifications and microphone
@@ -86,11 +94,7 @@ export default function App() {
   // Send haptic feedback on button taps
   const sendHaptic = () => {
     if (supportedCommands.includes("send-haptic-feedback")) {
-      MiniKit.commandsAsync.sendHapticFeedback({
-        style: "medium",
-      }).catch(() => {
-        // Fail silently
-      });
+      MiniKit.commandsAsync.sendHapticFeedback({ style: "medium" }).catch(() => {});
     }
   };
 
@@ -102,12 +106,10 @@ export default function App() {
       return;
     }
     try {
-      const res = await MiniKit.commandsAsync.walletAuth();
-      console.log("Wallet authenticated:", res);
+      await MiniKit.commandsAsync.walletAuth();
       setWalletConnected(true);
       fetchWldBalance();
     } catch (e) {
-      console.error("Wallet auth failed:", e);
       alert("Wallet connection failed or cancelled.");
     }
   };
@@ -115,10 +117,8 @@ export default function App() {
   // Fetch WLD balance (simulate here or use actual SDK call if available)
   const fetchWldBalance = async () => {
     try {
-      // If there’s a command to get balance, use it here.
-      // For now, simulate:
-      setWldBalance(100); // simulate 100 WLD
-    } catch (e) {
+      setWldBalance(100); // simulate 100 WLD balance
+    } catch {
       setWldBalance(0);
     }
   };
@@ -148,18 +148,16 @@ export default function App() {
       }
 
       await MiniKit.commandsAsync.sendTransaction({
-        to: "YOUR_WLD_RECEIVING_ADDRESS", // Replace this with your actual address
+        to: "YOUR_WLD_RECEIVING_ADDRESS", // Replace with your actual address
         amount: amount,
         tokenSymbol: "WLD",
         memo: "Buy KIND tokens",
       });
 
-      // Update $KIND balance here (simulate)
       alert(`Success! You bought ${amount * 10} $KIND (simulated).`);
       setBuyAmount("");
       fetchWldBalance();
-    } catch (e) {
-      console.error("Transaction failed:", e);
+    } catch {
       alert("Transaction failed or cancelled.");
     }
     setBuyLoading(false);
@@ -180,22 +178,61 @@ export default function App() {
         memo: "Support KIND Circle mini app",
       });
       alert("Payment request sent.");
-    } catch (e) {
+    } catch {
       alert("Payment request cancelled or failed.");
     }
   };
 
-  // UI and other app logic here ...
-
-  // Screen rendering (simplified)
+  // Render
   if (!loggedIn) {
     return (
-      <WelcomeScreen
-        onLogin={() => {
-          sendHaptic();
-          handleLogin();
+      <div
+        style={{
+          paddingTop: safeAreaInsets.top,
+          paddingRight: safeAreaInsets.right,
+          paddingBottom: safeAreaInsets.bottom,
+          paddingLeft: safeAreaInsets.left,
+          fontFamily: "Arial, sans-serif",
+          backgroundColor: "#FFF6E5",
+          minHeight: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+          alignItems: "center",
+          textAlign: "center",
+          padding: 20,
         }}
-      />
+      >
+        <h1 style={{ fontSize: 28, marginBottom: 12, color: "#222" }}>
+          Welcome to KIND Circle
+        </h1>
+        <p
+          style={{
+            fontSize: 16,
+            marginBottom: 24,
+            color: "#555",
+            maxWidth: 320,
+          }}
+        >
+          Verify you’re a real human to spread kindness and earn $KIND.
+        </p>
+        <button
+          onClick={handleWorldIDVerify}
+          disabled={loadingVerify}
+          style={{
+            backgroundColor: "#FFB703",
+            border: "none",
+            padding: "12px 26px",
+            fontSize: 18,
+            borderRadius: 10,
+            color: "#fff",
+            cursor: "pointer",
+            marginBottom: 12,
+          }}
+        >
+          {loadingVerify ? "Verifying..." : "Verify with World ID"}
+        </button>
+      </div>
     );
   }
 
@@ -210,6 +247,7 @@ export default function App() {
         backgroundColor: "#FFF6E5",
         minHeight: "100vh",
         textAlign: "center",
+        padding: 20,
       }}
     >
       <h1>KIND Circle</h1>
@@ -218,7 +256,16 @@ export default function App() {
       {!walletConnected ? (
         <button
           onClick={connectWallet}
-          style={styles.button}
+          style={{
+            backgroundColor: "#FFB703",
+            border: "none",
+            padding: "12px 26px",
+            fontSize: 18,
+            borderRadius: 10,
+            color: "#fff",
+            cursor: "pointer",
+            marginTop: 12,
+          }}
         >
           Connect Wallet
         </button>
@@ -234,9 +281,29 @@ export default function App() {
             placeholder="Amount of $WLD to spend"
             value={buyAmount}
             onChange={(e) => setBuyAmount(e.target.value)}
-            style={styles.input}
+            style={{
+              padding: "8px 12px",
+              fontSize: 16,
+              borderRadius: 6,
+              border: "1px solid #ccc",
+              width: 180,
+              marginTop: 12,
+            }}
           />
-          <button onClick={buyKind} disabled={buyLoading} style={styles.button}>
+          <button
+            onClick={buyKind}
+            disabled={buyLoading}
+            style={{
+              backgroundColor: "#FFB703",
+              border: "none",
+              padding: "12px 26px",
+              fontSize: 18,
+              borderRadius: 10,
+              color: "#fff",
+              cursor: "pointer",
+              marginTop: 12,
+            }}
+          >
             {buyLoading ? "Processing..." : "Buy $KIND"}
           </button>
         </>
@@ -244,52 +311,45 @@ export default function App() {
 
       <hr style={{ margin: "30px 0", width: "80%" }} />
 
-      <button onClick={requestPayment} style={styles.button}>
+      <button
+        onClick={requestPayment}
+        style={{
+          backgroundColor: "#FFB703",
+          border: "none",
+          padding: "12px 26px",
+          fontSize: 18,
+          borderRadius: 10,
+          color: "#fff",
+          cursor: "pointer",
+          marginTop: 12,
+        }}
+      >
         Support KIND Circle with 1 $WLD
       </button>
 
       <hr style={{ margin: "30px 0", width: "80%" }} />
 
-      <button onClick={requestPermissions} style={styles.button}>
+      <button
+        onClick={requestPermissions}
+        style={{
+          backgroundColor: "#FFB703",
+          border: "none",
+          padding: "12px 26px",
+          fontSize: 18,
+          borderRadius: 10,
+          color: "#fff",
+          cursor: "pointer",
+          marginTop: 12,
+        }}
+      >
         Request Permissions (Notifications & Microphone)
       </button>
 
-      <p>
-        Permissions granted: Notifications: {permissionsGranted.notifications ? "Yes" : "No"} | Microphone: {permissionsGranted.microphone ? "Yes" : "No"}
+      <p style={{ marginTop: 12 }}>
+        Permissions granted: Notifications:{" "}
+        {permissionsGranted.notifications ? "Yes" : "No"} | Microphone:{" "}
+        {permissionsGranted.microphone ? "Yes" : "No"}
       </p>
     </div>
   );
 }
-
-function WelcomeScreen({ onLogin }) {
-  return (
-    <div style={{ padding: 20, textAlign: "center" }}>
-      <h1>Welcome to KIND Circle</h1>
-      <p>Verify you’re a real human to spread kindness and earn $KIND.</p>
-      <button onClick={onLogin} style={styles.button}>
-        Verify with World ID
-      </button>
-    </div>
-  );
-}
-
-const styles = {
-  button: {
-    backgroundColor: "#FFB703",
-    border: "none",
-    padding: "12px 26px",
-    fontSize: 18,
-    borderRadius: 10,
-    color: "#fff",
-    cursor: "pointer",
-    marginTop: 12,
-  },
-  input: {
-    padding: "8px 12px",
-    fontSize: 16,
-    borderRadius: 6,
-    border: "1px solid #ccc",
-    width: 180,
-    marginTop: 12,
-  },
-};
