@@ -1,22 +1,34 @@
-import { NextResponse } from "next/server";
-import { verifyCloudProof, ISuccessResult } from "@worldcoin/minikit-js";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  verifyCloudProof,
+  IVerifyResponse,
+  ISuccessResult,
+} from "@worldcoin/minikit-js";
 
-export async function POST(req: Request) {
+interface IRequestPayload {
+  payload: ISuccessResult;
+  action: string;
+  signal?: string;
+}
+
+export async function POST(req: NextRequest) {
   try {
-    const { payload, action, signal } = await req.json();
-
-    const app_id = process.env.APP_ID; // Your app ID, e.g. 'app_xxxxx'
-
-    const verifyRes = await verifyCloudProof(payload as ISuccessResult, app_id, action, signal);
+    const { payload, action, signal } = (await req.json()) as IRequestPayload;
+    const app_id = process.env.APP_ID as `app_${string}`;
+    const verifyRes = (await verifyCloudProof(
+      payload,
+      app_id,
+      action,
+      signal
+    )) as IVerifyResponse;
 
     if (verifyRes.success) {
-      // Verification success - do backend logic here (e.g. mark user verified)
-      return NextResponse.json({ status: 200, verifyRes });
+      // TODO: Add backend logic for successful verification (e.g., mark user verified)
+      return NextResponse.json({ verifyRes, status: 200 });
     } else {
-      // Verification failed
-      return NextResponse.json({ status: 400, verifyRes });
+      return NextResponse.json({ verifyRes, status: 400 });
     }
   } catch (error) {
-    return NextResponse.json({ status: 500, error: (error as Error).message });
+    return NextResponse.json({ error: "Internal Server Error", status: 500 });
   }
 }
