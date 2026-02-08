@@ -1,115 +1,72 @@
-// app/page.tsx
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import {
   MiniKit,
-  tokenToDecimals,
-  Tokens,
-  PayCommandInput,
-  VerifyCommandInput,
+  WalletAuthInput,
   VerificationLevel,
 } from "@worldcoin/minikit-js";
 
 export default function Home() {
-  // Send payment function
-  const sendPayment = async () => {
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+
+  // Wallet sign in function
+  const signInWithWallet = async () => {
     if (!MiniKit.isInstalled()) {
-      alert("Please install World App to proceed.");
+      alert("Please install World App");
       return;
     }
 
     try {
-      // Call backend to get a unique reference ID
-      const res = await fetch("/api/initiate-payment", { method: "POST" });
-      const { id } = await res.json();
+      // Get nonce from backend
+      const res = await fetch("/api/nonce");
+      const { nonce } = await res.json();
 
-      const payload: PayCommandInput = {
-        reference: id,
-        to: "YOUR_WHITELISTED_WALLET_ADDRESS", // Replace with your actual whitelisted address
-        tokens: [
-          {
-            symbol: Tokens.WLD,
-            token_amount: tokenToDecimals(1, Tokens.WLD).toString(), // Sending 1 WLD token
-          },
-        ],
-        description: "Example payment using MiniKit",
-      };
+      const { commandPayload, finalPayload } = await MiniKit.commandsAsync.walletAuth({
+        nonce,
+        requestId: "0", // Optional
+        expirationTime: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+        notBefore: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
+        statement: "Sign in to MyApp via World App",
+      });
 
-      // Send pay command to World App
-      const { finalPayload } = await MiniKit.commandsAsync.pay(payload);
+      if (finalPayload.status === "error") {
+        alert("Wallet auth cancelled or failed");
+        return;
+      }
 
-      if (finalPayload.status === "success") {
-        // Confirm payment on backend
-        const confirmRes = await fetch("/api/confirm-payment", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(finalPayload),
-        });
+      // Send the signed message and nonce to backend to verify
+      const verifyRes = await fetch("/api/complete-siwe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payload: finalPayload,
+          nonce,
+        }),
+      });
 
-        const confirmJson = await confirmRes.json();
-        if (confirmJson.success) {
-          alert("Payment successful!");
-        } else {
-          alert("Payment verification failed.");
-        }
+      const verifyJson = await verifyRes.json();
+      if (verifyJson.status === "success" && verifyJson.isValid) {
+        alert("Signed in successfully!");
+        setWalletAddress(finalPayload.address);
       } else {
-        alert("Payment was cancelled or failed.");
+        alert("Failed to verify signature");
       }
     } catch (error) {
-      alert("Error during payment: " + error);
-    }
-  };
-
-  // World ID verify function
-  const handleVerify = async () => {
-    if (!MiniKit.isInstalled()) {
-      alert("Please install World App to proceed.");
-      return;
-    }
-
-    try {
-      const verifyPayload: VerifyCommandInput = {
-        action: "your-action-id", // Replace with your actual action ID from Developer Portal
-        signal: "optional-signal", // Optional - can be a user ID or other string
-        verification_level: VerificationLevel.Orb,
-      };
-
-      const { finalPayload } = await MiniKit.commandsAsync.verify(verifyPayload);
-
-      if (finalPayload.status === "success") {
-        // Send verification proof to backend
-        const verifyRes = await fetch("/api/verify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            payload: finalPayload,
-            action: verifyPayload.action,
-            signal: verifyPayload.signal,
-          }),
-        });
-
-        const verifyJson = await verifyRes.json();
-        if (verifyJson.status === 200) {
-          alert("Verification success!");
-        } else {
-          alert("Verification failed on backend.");
-        }
-      } else {
-        alert("Verification cancelled or failed.");
-      }
-    } catch (error) {
-      alert("Error during verification: " + error);
+      alert("Error during wallet sign-in: " + error);
     }
   };
 
   return (
     <main style={{ padding: "2rem" }}>
-      <h1>World App Mini App Demo</h1>
-      <button onClick={sendPayment} style={{ marginRight: "1rem" }}>
-        Send Payment
-      </button>
-      <button onClick={handleVerify}>Verify User</button>
+      <h1>World App Mini App Wallet Auth Demo</h1>
+      <button onClick={signInWithWallet}>Sign in with Wallet</button>
+
+      {walletAddress && (
+        <p>
+          Signed in wallet address: <code>{walletAddress}</code>
+        </p>
+      )}
     </main>
   );
 }
