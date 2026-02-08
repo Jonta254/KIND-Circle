@@ -1,72 +1,71 @@
-"use client";
+import React, { useState } from 'react';
+import SimpleABI from './abi/SimpleABI.json'; // Your ABI JSON file
+import { MiniKit } from '@worldcoin/minikit-js';
+import { useWaitForTransactionReceipt } from '@worldcoin/minikit-react';
+import { createPublicClient, http } from 'viem';
+import { worldchain } from 'viem/chains';
 
-import React, { useState } from "react";
-import {
-  MiniKit,
-  WalletAuthInput,
-  VerificationLevel,
-} from "@worldcoin/minikit-js";
+const MINIAPP_CONTRACT = '0x979FC9777CE6a8ef76CFbcE9EAfA3C7d53b85458'; // Contract address you gave
+const RECIPIENT_ADDRESS = '0x6588e8765c495a9d44e93b0293aedd7ecd6167fc'; // Updated recipient address you gave
+const APP_ID = 'app_2494b73b6612396166f27742c016a0c9'; // Your app ID
 
-export default function Home() {
-  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+export default function App() {
+  const [transactionId, setTransactionId] = useState('');
+  const [statusMessage, setStatusMessage] = useState('');
 
-  // Wallet sign in function
-  const signInWithWallet = async () => {
-    if (!MiniKit.isInstalled()) {
-      alert("Please install World App");
-      return;
-    }
+  const client = createPublicClient({
+    chain: worldchain,
+    transport: http('https://worldchain-mainnet.g.alchemy.com/public'),
+  });
 
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
+    client,
+    appConfig: { app_id: APP_ID },
+    transactionId,
+  });
+
+  const mintToken = async () => {
+    setStatusMessage('Sending mint token transaction...');
     try {
-      // Get nonce from backend
-      const res = await fetch("/api/nonce");
-      const { nonce } = await res.json();
-
-      const { commandPayload, finalPayload } = await MiniKit.commandsAsync.walletAuth({
-        nonce,
-        requestId: "0", // Optional
-        expirationTime: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
-        notBefore: new Date(Date.now() - 24 * 60 * 60 * 1000), // 1 day ago
-        statement: "Sign in to MyApp via World App",
+      const { commandPayload, finalPayload } = await MiniKit.commandsAsync.sendTransaction({
+        transaction: [
+          {
+            address: MINIAPP_CONTRACT,
+            abi: SimpleABI,
+            functionName: 'mintToken',
+            args: [RECIPIENT_ADDRESS],
+          },
+        ],
+        formatPayload: true, // keep default true
       });
 
-      if (finalPayload.status === "error") {
-        alert("Wallet auth cancelled or failed");
-        return;
-      }
-
-      // Send the signed message and nonce to backend to verify
-      const verifyRes = await fetch("/api/complete-siwe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          payload: finalPayload,
-          nonce,
-        }),
-      });
-
-      const verifyJson = await verifyRes.json();
-      if (verifyJson.status === "success" && verifyJson.isValid) {
-        alert("Signed in successfully!");
-        setWalletAddress(finalPayload.address);
+      if (finalPayload.status === 'error') {
+        setStatusMessage('Error sending transaction: ' + finalPayload.errorMessage);
+        console.error('Error sending transaction', finalPayload);
       } else {
-        alert("Failed to verify signature");
+        setTransactionId(finalPayload.transaction_id);
+        setStatusMessage('Transaction sent! Waiting for confirmation...');
       }
     } catch (error) {
-      alert("Error during wallet sign-in: " + error);
+      setStatusMessage('Transaction failed: ' + error.message);
+      console.error(error);
     }
   };
 
   return (
-    <main style={{ padding: "2rem" }}>
-      <h1>World App Mini App Wallet Auth Demo</h1>
-      <button onClick={signInWithWallet}>Sign in with Wallet</button>
+    <div style={{ padding: 20, fontFamily: 'Arial, sans-serif' }}>
+      <h1>Mint Token Mini App</h1>
+      <p>
+        Contract: <code>{MINIAPP_CONTRACT}</code><br />
+        Recipient: <code>{RECIPIENT_ADDRESS}</code><br />
+        App ID: <code>{APP_ID}</code>
+      </p>
 
-      {walletAddress && (
-        <p>
-          Signed in wallet address: <code>{walletAddress}</code>
-        </p>
-      )}
-    </main>
+      <button onClick={mintToken} disabled={isConfirming || isConfirmed} style={{ padding: '10px 20px', fontSize: 16 }}>
+        {isConfirming ? 'Confirming Transaction...' : isConfirmed ? 'Transaction Confirmed!' : 'Mint Token'}
+      </button>
+
+      <p>{statusMessage}</p>
+    </div>
   );
 }
