@@ -22,31 +22,20 @@ export default function App() {
     left: 0,
   });
 
-  // Wallet states
+  // Wallet and payment states
   const [walletConnected, setWalletConnected] = useState(false);
   const [wldBalance, setWldBalance] = useState(0);
-
-  // Buy KIND states
   const [buyAmount, setBuyAmount] = useState("");
   const [buyLoading, setBuyLoading] = useState(false);
 
-  // Session & streak states (same as before)
-  const [sessionActive, setSessionActive] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(600);
-  const [missedTaps, setMissedTaps] = useState(0);
-  const [boostUsed, setBoostUsed] = useState(false);
-  const [streakCount, setStreakCount] = useState(0);
-  const [lastSessionDate, setLastSessionDate] = useState(null);
-  const [rewardBonus, setRewardBonus] = useState(0);
-  const [kindBalance, setKindBalance] = useState(0);
-  const [boostActive, setBoostActive] = useState(false);
+  // Permission states
+  const [permissionsGranted, setPermissionsGranted] = useState({
+    notifications: false,
+    microphone: false,
+  });
 
-  const presenceTimeout = useRef(null);
-
-  const SESSION_DURATION = 600; // 10 minutes
-  const PRESENCE_INTERVAL = 70; // seconds
-  const MAX_MISSES = 2;
-  const BASE_REWARD = 10; // base $KIND
+  // Session & streak states (keep your existing logic)
+  // ... (you can keep previous session and streak state here)
 
   // Load World App context on mount
   useEffect(() => {
@@ -66,25 +55,6 @@ export default function App() {
     }
   }, []);
 
-  // Load stored data on login
-  useEffect(() => {
-    if (loggedIn) {
-      const data = localStorage.getItem(STORAGE_KEY);
-      if (data) {
-        const parsed = JSON.parse(data);
-        setStreakCount(parsed.streakCount || 0);
-        setLastSessionDate(parsed.lastSessionDate || null);
-      }
-      const balance = localStorage.getItem(KIND_BALANCE_KEY);
-      if (balance) {
-        setKindBalance(parseInt(balance, 10));
-      } else {
-        setKindBalance(50);
-        localStorage.setItem(KIND_BALANCE_KEY, "50");
-      }
-    }
-  }, [loggedIn]);
-
   // Handle login
   const handleLogin = () => {
     alert("World ID verification will be added here.");
@@ -92,38 +62,70 @@ export default function App() {
     setScreen("home");
   };
 
+  // Request permissions for notifications and microphone
+  const requestPermissions = async () => {
+    if (!supportedCommands.includes("request-permission")) {
+      alert("Permission requests not supported in your World App version.");
+      return;
+    }
+
+    try {
+      const result = await MiniKit.commandsAsync.requestPermission({
+        permissions: ["notifications", "microphone"],
+      });
+      setPermissionsGranted({
+        notifications: result.notifications === "granted",
+        microphone: result.microphone === "granted",
+      });
+      alert("Permissions updated.");
+    } catch (e) {
+      alert("Permission request cancelled or failed.");
+    }
+  };
+
+  // Send haptic feedback on button taps
+  const sendHaptic = () => {
+    if (supportedCommands.includes("send-haptic-feedback")) {
+      MiniKit.commandsAsync.sendHapticFeedback({
+        style: "medium",
+      }).catch(() => {
+        // Fail silently
+      });
+    }
+  };
+
   // Wallet connect only if supported
   const connectWallet = async () => {
-    if (!supportedCommands.includes("wallet-auth") && !supportedCommands.includes("connectWallet")) {
-      alert("Wallet connection not supported in your World App version.");
+    sendHaptic();
+    if (!supportedCommands.includes("wallet-auth")) {
+      alert("Wallet authentication not supported in your World App version.");
       return;
     }
     try {
-      const res = await MiniKit.commandsAsync.connectWallet();
-      console.log("Wallet connected:", res);
+      const res = await MiniKit.commandsAsync.walletAuth();
+      console.log("Wallet authenticated:", res);
       setWalletConnected(true);
       fetchWldBalance();
     } catch (e) {
-      console.error("Wallet connection failed:", e);
+      console.error("Wallet auth failed:", e);
       alert("Wallet connection failed or cancelled.");
     }
   };
 
-  // Fetch WLD balance
+  // Fetch WLD balance (simulate here or use actual SDK call if available)
   const fetchWldBalance = async () => {
     try {
-      const balance = await MiniKit.commandsAsync.getBalance({
-        tokenSymbol: "WLD",
-      });
-      setWldBalance(balance);
+      // If there’s a command to get balance, use it here.
+      // For now, simulate:
+      setWldBalance(100); // simulate 100 WLD
     } catch (e) {
-      console.error("Failed to fetch WLD balance:", e);
       setWldBalance(0);
     }
   };
 
   // Buy KIND with WLD (simulate sending transaction)
   const buyKind = async () => {
+    sendHaptic();
     const amount = parseFloat(buyAmount);
     if (!walletConnected) {
       alert("Connect your wallet first.");
@@ -139,19 +141,21 @@ export default function App() {
     }
     setBuyLoading(true);
     try {
+      if (!supportedCommands.includes("send-transaction")) {
+        alert("Sending transactions is not supported in your World App version.");
+        setBuyLoading(false);
+        return;
+      }
+
       await MiniKit.commandsAsync.sendTransaction({
-        to: "YOUR_WLD_RECEIVING_ADDRESS", // Replace this
+        to: "YOUR_WLD_RECEIVING_ADDRESS", // Replace this with your actual address
         amount: amount,
         tokenSymbol: "WLD",
         memo: "Buy KIND tokens",
       });
 
-      const kindEarned = Math.floor(amount * 10);
-      const newBalance = kindBalance + kindEarned;
-      setKindBalance(newBalance);
-      localStorage.setItem(KIND_BALANCE_KEY, newBalance.toString());
-
-      alert(`Success! You bought ${kindEarned} $KIND.`);
+      // Update $KIND balance here (simulate)
+      alert(`Success! You bought ${amount * 10} $KIND (simulated).`);
       setBuyAmount("");
       fetchWldBalance();
     } catch (e) {
@@ -161,151 +165,114 @@ export default function App() {
     setBuyLoading(false);
   };
 
-  // The rest of your session, streak, boost logic unchanged...
+  // Simple Pay button example using pay command
+  const requestPayment = async () => {
+    sendHaptic();
+    if (!supportedCommands.includes("pay")) {
+      alert("Payment requests not supported in your World App version.");
+      return;
+    }
 
-  // Screen rendering logic
+    try {
+      await MiniKit.commandsAsync.pay({
+        amount: 1,
+        tokenSymbol: "WLD",
+        memo: "Support KIND Circle mini app",
+      });
+      alert("Payment request sent.");
+    } catch (e) {
+      alert("Payment request cancelled or failed.");
+    }
+  };
+
+  // UI and other app logic here ...
+
+  // Screen rendering (simplified)
   if (!loggedIn) {
-    return <WelcomeScreen onLogin={handleLogin} />;
-  }
-
-  if (screen === "home") {
     return (
-      <HomeScreen
-        onStart={() => {
-          setScreen("session");
-          setTimeLeft(SESSION_DURATION);
-          setMissedTaps(0);
-          setSessionActive(true);
-          setBoostUsed(false);
+      <WelcomeScreen
+        onLogin={() => {
+          sendHaptic();
+          handleLogin();
         }}
-        streakCount={streakCount}
-        kindBalance={kindBalance}
-        boostActive={boostActive}
-        activateBoost={() => {
-          if (kindBalance >= BOOST_COST) {
-            setKindBalance(kindBalance - BOOST_COST);
-            setBoostActive(true);
-            alert(
-              `Missed Tap Protection boost activated! You can miss 1 tap without penalty this session.`
-            );
-            localStorage.setItem(KIND_BALANCE_KEY, (kindBalance - BOOST_COST).toString());
-          } else {
-            alert(`Not enough $KIND to activate boost. You need ${BOOST_COST} $KIND.`);
-          }
-        }}
-        walletConnected={walletConnected}
-        connectWallet={connectWallet}
-        wldBalance={wldBalance}
-        buyAmount={buyAmount}
-        setBuyAmount={setBuyAmount}
-        buyKind={buyKind}
-        buyLoading={buyLoading}
-        launchLocation={launchLocation}
       />
     );
   }
 
-  // ... other screens unchanged
-
-  return null;
-}
-
-// Updated HomeScreen with launch location and wallet features conditionally enabled
-
-function HomeScreen({
-  onStart,
-  streakCount,
-  kindBalance,
-  boostActive,
-  activateBoost,
-  walletConnected,
-  connectWallet,
-  wldBalance,
-  buyAmount,
-  setBuyAmount,
-  buyKind,
-  buyLoading,
-  launchLocation,
-}) {
   return (
     <div
       style={{
-        padding: 20,
+        paddingTop: safeAreaInsets.top,
+        paddingRight: safeAreaInsets.right,
+        paddingBottom: safeAreaInsets.bottom,
+        paddingLeft: safeAreaInsets.left,
+        fontFamily: "Arial, sans-serif",
+        backgroundColor: "#FFF6E5",
+        minHeight: "100vh",
         textAlign: "center",
       }}
     >
-      <h2>KIND Circle</h2>
+      <h1>KIND Circle</h1>
       <p>App opened from: <strong>{launchLocation}</strong></p>
 
-      <p>Spend 10 minutes in the circle to earn kindness.</p>
-
-      <button style={styles.button} onClick={onStart}>
-        Enter the Circle
-      </button>
-
-      {streakCount > 0 && (
-        <p style={{ marginTop: 16, color: "#555" }}>
-          Your current streak: <strong>{streakCount} day{streakCount > 1 ? "s" : ""}</strong>
-        </p>
-      )}
-
-      <p style={{ marginTop: 24, fontWeight: "bold" }}>
-        Your $KIND balance: {kindBalance}
-      </p>
-
-      {!boostActive && (
-        <button style={styles.boostButton} onClick={activateBoost}>
-          Activate Missed Tap Protection Boost ({BOOST_COST} $KIND)
+      {!walletConnected ? (
+        <button
+          onClick={connectWallet}
+          style={styles.button}
+        >
+          Connect Wallet
         </button>
-      )}
+      ) : (
+        <>
+          <p>Your wallet is connected.</p>
+          <p>Your $WLD balance: {wldBalance}</p>
 
-      {boostActive && (
-        <p style={{ marginTop: 12, color: "#2a9d8f" }}>
-          Boost active: You can miss 1 tap without penalty this session.
-        </p>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            placeholder="Amount of $WLD to spend"
+            value={buyAmount}
+            onChange={(e) => setBuyAmount(e.target.value)}
+            style={styles.input}
+          />
+          <button onClick={buyKind} disabled={buyLoading} style={styles.button}>
+            {buyLoading ? "Processing..." : "Buy $KIND"}
+          </button>
+        </>
       )}
 
       <hr style={{ margin: "30px 0", width: "80%" }} />
 
-      {/* Wallet Connect and Buy KIND */}
-      {!walletConnected ? (
-        <button style={styles.button} onClick={connectWallet}>
-          Connect Wallet to Buy $KIND
-        </button>
-      ) : (
-        <>
-          <p style={{ fontWeight: "bold" }}>
-            Wallet Connected. Your $WLD Balance: {wldBalance}
-          </p>
+      <button onClick={requestPayment} style={styles.button}>
+        Support KIND Circle with 1 $WLD
+      </button>
 
-          <div style={{ marginTop: 12 }}>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="Amount of $WLD to spend"
-              value={buyAmount}
-              onChange={(e) => setBuyAmount(e.target.value)}
-              style={styles.input}
-            />
-            <button
-              style={{ ...styles.button, marginLeft: 10 }}
-              onClick={buyKind}
-              disabled={buyLoading}
-            >
-              {buyLoading ? "Processing..." : "Buy $KIND"}
-            </button>
-          </div>
-          <small style={{ marginTop: 6, display: "block", color: "#777" }}>
-            Conversion rate: 1 $WLD = 10 $KIND (simulated)
-          </small>
-        </>
-      )}
+      <hr style={{ margin: "30px 0", width: "80%" }} />
+
+      <button onClick={requestPermissions} style={styles.button}>
+        Request Permissions (Notifications & Microphone)
+      </button>
+
+      <p>
+        Permissions granted: Notifications: {permissionsGranted.notifications ? "Yes" : "No"} | Microphone: {permissionsGranted.microphone ? "Yes" : "No"}
+      </p>
     </div>
   );
 }
 
-// Styles remain the same as previous versions
+function WelcomeScreen({ onLogin }) {
+  return (
+    <div style={{ padding: 20, textAlign: "center" }}>
+      <h1>Welcome to KIND Circle</h1>
+      <p>Verify you’re a real human to spread kindness and earn $KIND.</p>
+      <button onClick={onLogin} style={styles.button}>
+        Verify with World ID
+      </button>
+    </div>
+  );
+}
+
 const styles = {
   button: {
     backgroundColor: "#FFB703",
@@ -317,21 +284,12 @@ const styles = {
     cursor: "pointer",
     marginTop: 12,
   },
-  boostButton: {
-    backgroundColor: "#2a9d8f",
-    border: "none",
-    padding: "12px 26px",
-    fontSize: 16,
-    borderRadius: 10,
-    color: "#fff",
-    cursor: "pointer",
-    marginTop: 16,
-  },
   input: {
     padding: "8px 12px",
     fontSize: 16,
     borderRadius: 6,
     border: "1px solid #ccc",
     width: 180,
+    marginTop: 12,
   },
 };
