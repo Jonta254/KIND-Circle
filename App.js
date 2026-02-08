@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 const STORAGE_KEY = 'kindCircleStreakData';
+const KIND_BALANCE_KEY = 'kindCircleKindBalance';
+const BOOST_COST = 5; // Cost in $KIND to activate Missed Tap Protection
 
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(false);
@@ -10,11 +12,16 @@ export default function App() {
   const [sessionActive, setSessionActive] = useState(false);
   const [timeLeft, setTimeLeft] = useState(600); // 10 minutes in seconds
   const [missedTaps, setMissedTaps] = useState(0);
+  const [boostUsed, setBoostUsed] = useState(false);
 
   // Streak states
   const [streakCount, setStreakCount] = useState(0);
   const [lastSessionDate, setLastSessionDate] = useState(null);
   const [rewardBonus, setRewardBonus] = useState(0);
+
+  // KIND balance
+  const [kindBalance, setKindBalance] = useState(0);
+  const [boostActive, setBoostActive] = useState(false);
 
   // Constants
   const SESSION_DURATION = 600; // seconds
@@ -24,7 +31,7 @@ export default function App() {
 
   const presenceTimeout = useRef(null);
 
-  // Load streak data from localStorage on login
+  // Load data from localStorage on login
   useEffect(() => {
     if (loggedIn) {
       const data = localStorage.getItem(STORAGE_KEY);
@@ -32,6 +39,15 @@ export default function App() {
         const parsed = JSON.parse(data);
         setStreakCount(parsed.streakCount || 0);
         setLastSessionDate(parsed.lastSessionDate || null);
+      }
+
+      const balance = localStorage.getItem(KIND_BALANCE_KEY);
+      if (balance) {
+        setKindBalance(parseInt(balance, 10));
+      } else {
+        // Start with 50 KIND for testing
+        setKindBalance(50);
+        localStorage.setItem(KIND_BALANCE_KEY, '50');
       }
     }
   }, [loggedIn]);
@@ -43,12 +59,25 @@ export default function App() {
     setScreen('home');
   };
 
+  // Activate boost on Home screen
+  const activateBoost = () => {
+    if (kindBalance >= BOOST_COST) {
+      setKindBalance(kindBalance - BOOST_COST);
+      setBoostActive(true);
+      alert(`Missed Tap Protection boost activated! You can miss 1 tap without session ending.`);
+      localStorage.setItem(KIND_BALANCE_KEY, (kindBalance - BOOST_COST).toString());
+    } else {
+      alert(`Not enough $KIND to activate boost. You need ${BOOST_COST} $KIND.`);
+    }
+  };
+
   // Start Kind Circle session
   const startSession = () => {
     setTimeLeft(SESSION_DURATION);
     setMissedTaps(0);
     setSessionActive(true);
     setScreen('session');
+    setBoostUsed(false);
   };
 
   // Handle presence tap
@@ -62,12 +91,22 @@ export default function App() {
     if (presenceTimeout.current) clearTimeout(presenceTimeout.current);
     presenceTimeout.current = setTimeout(() => {
       setMissedTaps((missed) => {
-        if (missed + 1 >= MAX_MISSES) {
+        let newMissed = missed + 1;
+
+        if (boostActive && !boostUsed && newMissed === 1) {
+          // Use boost to ignore first miss
+          setBoostUsed(true);
+          // Do NOT end session
+          return missed; // keep same missed count
+        }
+
+        if (newMissed >= MAX_MISSES) {
           // End session if max misses reached
           endSession(false);
           return MAX_MISSES;
         }
-        return missed + 1;
+
+        return newMissed;
       });
     }, PRESENCE_INTERVAL * 1000);
   };
@@ -79,10 +118,15 @@ export default function App() {
 
     if (success) {
       updateStreak();
+      // Add earned KIND to balance
+      const earned = calculateReward();
+      const newBalance = kindBalance + earned;
+      setKindBalance(newBalance);
+      localStorage.setItem(KIND_BALANCE_KEY, newBalance.toString());
     } else {
-      // If session failed, no streak update
-      setScreen('reward');
+      // If session failed, no streak update and no reward
       setRewardBonus(0);
+      setScreen('reward');
     }
   };
 
@@ -176,7 +220,15 @@ export default function App() {
   }
 
   if (screen === 'home') {
-    return <HomeScreen onStart={startSession} streakCount={streakCount} />;
+    return (
+      <HomeScreen
+        onStart={startSession}
+        streakCount={streakCount}
+        kindBalance={kindBalance}
+        boostActive={boostActive}
+        activateBoost={activateBoost}
+      />
+    );
   }
 
   if (screen === 'session') {
@@ -188,6 +240,8 @@ export default function App() {
         missedTaps={missedTaps}
         maxMisses={MAX_MISSES}
         onQuit={() => endSession(false)}
+        boostActive={boostActive}
+        boostUsed={boostUsed}
       />
     );
   }
@@ -198,9 +252,11 @@ export default function App() {
         onContinue={() => {
           setScreen('home');
           setRewardBonus(0);
+          setBoostActive(false);
         }}
         reward={calculateReward()}
         streakCount={streakCount}
+        kindBalance={kindBalance}
       />
     );
   }
@@ -228,19 +284,43 @@ function WelcomeScreen({ onLogin }) {
 // --------------------
 // Home Screen
 // --------------------
-function HomeScreen({ onStart, streakCount }) {
+function HomeScreen({
+  onStart,
+  streakCount,
+  kindBalance,
+  boostActive,
+  activateBoost,
+}) {
   return (
     <div style={styles.container}>
       <h2 style={{ marginBottom: 16 }}>KIND Circle</h2>
       <p style={{ marginBottom: 12 }}>
         Spend 10 minutes in the circle to earn kindness.
       </p>
+
       <button style={styles.button} onClick={onStart}>
         Enter the Circle
       </button>
+
       {streakCount > 0 && (
         <p style={{ marginTop: 16, color: '#555' }}>
           Your current streak: <strong>{streakCount} day{streakCount > 1 ? 's' : ''}</strong>
+        </p>
+      )}
+
+      <p style={{ marginTop: 24, fontWeight: 'bold' }}>
+        Your $KIND balance: {kindBalance}
+      </p>
+
+      {!boostActive && (
+        <button style={styles.boostButton} onClick={activateBoost}>
+          Activate Missed Tap Protection Boost ({BOOST_COST} $KIND)
+        </button>
+      )}
+
+      {boostActive && (
+        <p style={{ marginTop: 12, color: '#2a9d8f' }}>
+          Boost active: You can miss 1 tap without penalty this session.
         </p>
       )}
     </div>
@@ -257,6 +337,8 @@ function SessionScreen({
   missedTaps,
   maxMisses,
   onQuit,
+  boostActive,
+  boostUsed,
 }) {
   const progressPercent = ((600 - timeLeft) / 600) * 100;
 
@@ -300,8 +382,21 @@ function SessionScreen({
       </button>
 
       {/* Missed taps warning */}
-      <p style={{ marginTop: 16, color: missedTaps >= maxMisses ? 'red' : '#555' }}>
+      <p
+        style={{
+          marginTop: 16,
+          color:
+            missedTaps >= maxMisses
+              ? 'red'
+              : boostActive && boostUsed && missedTaps === 1
+              ? '#2a9d8f'
+              : '#555',
+        }}
+      >
         Missed taps: {missedTaps} / {maxMisses}
+        {boostActive && boostUsed && missedTaps === 1
+          ? ' (Boost used — no penalty)'
+          : ''}
       </p>
 
       <button style={styles.quitButton} onClick={onQuit}>
@@ -314,7 +409,7 @@ function SessionScreen({
 // --------------------
 // Reward Screen
 // --------------------
-function RewardScreen({ onContinue, reward, streakCount }) {
+function RewardScreen({ onContinue, reward, streakCount, kindBalance }) {
   return (
     <div style={styles.container}>
       <h2 style={{ marginBottom: 16 }}>Session Complete!</h2>
@@ -326,6 +421,9 @@ function RewardScreen({ onContinue, reward, streakCount }) {
           Current streak bonus applied!
         </p>
       )}
+      <p style={{ fontWeight: 'bold' }}>
+        Your total $KIND balance: {kindBalance}
+      </p>
       <button style={styles.button} onClick={onContinue}>
         Back to Home
       </button>
@@ -371,6 +469,16 @@ const styles = {
     color: '#fff',
     cursor: 'pointer',
     marginTop: 12,
+  },
+  boostButton: {
+    backgroundColor: '#2a9d8f',
+    border: 'none',
+    padding: '12px 26px',
+    fontSize: 16,
+    borderRadius: 10,
+    color: '#fff',
+    cursor: 'pointer',
+    marginTop: 16,
   },
   presenceButton: {
     backgroundColor: '#FFD166',
